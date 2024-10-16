@@ -1,0 +1,17 @@
+# any png files
+*.png
+
+# any excel files
+*.xlsx
+
+#any pptx files
+*.pptx
+
+#any venv
+*.venv
+
+#any pyc
+*.pyc
+
+#Plots folder
+Plots/
