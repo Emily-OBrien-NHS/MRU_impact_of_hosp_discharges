@@ -18,7 +18,7 @@ realtime_engine = create_engine('mssql+pyodbc://@dwrealtime/RealTimeReporting?'\
 ####ED Data
 ED_query = """
 select dischargedate as DischargeDate
-,DATEPART(HOUR, DischargeTime) AS DischargeHour
+--,DATEPART(HOUR, DischargeTime) AS DischargeHour
 ,count(NCAttendanceId) as EDDischarges
 , sum(datediff(mi,BedRequestedDateTime, DischargeDateTime)) as BedDelayMins
 ,(sum(case when is4hourbreach = 'n' then 1 else 0 end)*100.0)/count(*) as FourHourPerf
@@ -27,8 +27,8 @@ from DataWarehouse.ed.vw_EDAttendance
 where DischargeDate between '16-JUN-2022' and getdate()-1
 and IsNewAttendance = 'y'
 and DischargeDate is not NULL
-group by dischargedate, DATEPART(HOUR, DischargeTime) 
-order by DischargeDate desc, DATEPART(HOUR, DischargeTime) asc
+group by dischargedate--, DATEPART(HOUR, DischargeTime) 
+order by DischargeDate desc--, DATEPART(HOUR, DischargeTime) asc
 """
 ED_df = pd.read_sql(ED_query, cl3_engine)
 ####MRU Data
@@ -43,12 +43,12 @@ where WardStayCode = 'rk950116'
 
 
 ----Get admissions and mean los
-select cast(wardstaystart as date) as [DischargeDate], DATEPART(HOUR, wardstaystart) AS DischargeHour
+select cast(wardstaystart as date) as [DischargeDate]--, DATEPART(HOUR, wardstaystart) AS DischargeHour
 		,count(*) as MRUAdmissions
 		,sum(LosMins)*1.0/count(*) as MeanLoSMins
 from #mru
-group by cast(wardstaystart as date), DATEPART(HOUR, wardstaystart)
-order by cast(wardstaystart as date) desc, DATEPART(HOUR, wardstaystart) asc
+group by cast(wardstaystart as date)--, DATEPART(HOUR, wardstaystart)
+order by cast(wardstaystart as date) desc--, DATEPART(HOUR, wardstaystart) asc
 """
 MRU_df = pd.read_sql(MRU_query, realtime_engine)
 ####Medical Discharge data
@@ -78,14 +78,14 @@ and		(wstay.DischargingWard = 'Y' or (nextward.wardstaycode not like 'RK950%'))
 ---Get only discharges from a care group of Medicine
 select count(FKInpatientSpellID) as MedicineDischarges
 ,cast(dischdttm as date) as DischargeDate
-,DATEPART(HOUR, dischdttm) as DischargeHour
+--,DATEPART(HOUR, dischdttm) as DischargeHour
 from #dis ips
 ---Use bedstate wards to find care group
 inner join [RealTimeReporting].[dbo].[covid_bed_state_wards] bsw on bsw.WardCode = ips.DerrifordDisWardCode
 where CareGroup = 'Medicine'
 and DerrifordDisWardCode <> 'RK950116'
-group by cast(dischdttm as date), DATEPART(HOUR, dischdttm)
-order by cast(dischdttm as date) desc, DATEPART(HOUR, dischdttm) asc
+group by cast(dischdttm as date)--, DATEPART(HOUR, dischdttm)
+order by cast(dischdttm as date) desc--, DATEPART(HOUR, dischdttm) asc
 """
 disc_df = pd.read_sql(disc_query, realtime_engine)
 ####Close the connection
@@ -93,16 +93,16 @@ cl3_engine.dispose()
 realtime_engine.dispose()
 #####Merge data togehter and sort value by date
 df = disc_df.merge(ED_df, how='outer').merge(MRU_df, how='outer')
-df = df.sort_values(by=['DischargeDate', 'DischargeHour'])
+df = df.sort_values(by=['DischargeDate'])#, 'DischargeHour'])
 ####remove extremes from data
 df = df.loc[(~(df['BedDelayMins'] < 0))
             & (df['MeanTimeInDept'].fillna(0) < 3500)].copy()
 ####Ensure every hour for every date is captured in the data
-index = pd.MultiIndex.from_product([df['DischargeDate'].drop_duplicates(),
-                                    df['DischargeHour'].drop_duplicates()],
-                                    names=['DischargeDate', 'DischargeHour'])
-all_date_hours = pd.DataFrame(index = index).reset_index()
-df = all_date_hours.merge(df, on=['DischargeDate', 'DischargeHour'], how='left')
+#index = pd.MultiIndex.from_product([df['DischargeDate'].drop_duplicates(),
+ #                                   df['DischargeHour'].drop_duplicates()],
+  #                                  names=['DischargeDate', 'DischargeHour'])
+#all_date_hours = pd.DataFrame(index = index).reset_index()
+#df = all_date_hours.merge(df, on=['DischargeDate', 'DischargeHour'], how='left')
 ################################################################################
 ####################################ANALYSIS####################################
 ################################################################################
@@ -168,7 +168,7 @@ def cross_corr(x_col, y_col, x_lab, y_lab):
             axs[plot[0], plot[1]].plot(X, Y, '.')
             axs[plot[0], plot[1]].plot(x_plt, y_plt, 'r-')
             (axs[plot[0], plot[1]]
-             .set_title(f'Lag={lag} hours, corr={corr:.2f},\np-value={t_test.pvalue}',
+             .set_title(f'Lag={lag*24} hours, corr={corr:.2f},\np-value={t_test.pvalue}',
                         fontsize='x-large',
                         color='red' if significant else 'black'))
         #############Increase lag for next loop
