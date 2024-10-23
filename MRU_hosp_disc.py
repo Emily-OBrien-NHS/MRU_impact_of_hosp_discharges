@@ -212,3 +212,14 @@ cross_corr('MedicineDischarges', ['MeanTimeInDept', 'MeanLoSMins'],
            'Medicine Discharges', 'ED & MRU Time in Dep')
 cross_corr('MedicineDischarges', ['EDDischarges', 'MRUAdmissions'],
            'Medicine Discharges', 'ED & MRU Discharges or Admissions')
+
+#Plot weekly trends for each piece of data
+df['DoW'] = pd.to_datetime(df['DischargeDate']).dt.day_of_week
+for col in ['MedicineDischarges', 'EDDischarges', 'BedDelayMins',
+            'FourHourPerf', 'MeanTimeInDept', 'MRUAdmissions', 'MeanLoSMins']:
+    group = df.groupby('DoW', as_index=False)[col].mean()
+    plt.bar(group['DoW'].values, group[col].values)
+    plt.xticks([0, 1, 2, 3, 4, 5, 6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+    plt.title(f'{col} against day of week')
+    plt.savefig(rf'.\Plots\{col} against day of week.png')
+    plt.close()
