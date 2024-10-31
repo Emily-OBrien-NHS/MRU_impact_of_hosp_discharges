@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind
+from scipy.stats import chisquare
 
 ################################################################################
 ##################################Read in Data##################################
@@ -106,12 +107,14 @@ df = df.loc[(~(df['BedDelayMins'] < 0))
 ################################################################################
 ####################################ANALYSIS####################################
 ################################################################################
+lags = [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+df_out = pd.DataFrame(index=[i*24 for i in lags])
 def cross_corr(x_col, y_col, x_lab, y_lab):
     #############Get X and Y data
     X = df[x_col]
     Y = df[y_col]
     #############Define starting lag and the list of lags to do a full plot
-    lag = -12
+    lag = -3
     plt_lags = [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     subplots = [[0,0], [0,1], [0,2], [0,3],
                 [1,0], [1,1], [1,2], [1,3],
@@ -150,7 +153,7 @@ def cross_corr(x_col, y_col, x_lab, y_lab):
         significant = abs(corr) > sig_test
         t_test = ttest_ind(X, Y, nan_policy='omit')
         lags.append(lag)
-        corrs.append(abs(corr))
+        corrs.append(corr)
         sigs.append(sig_test)
 
         #############If lag in plt_lags, plot the full scatter plot for that lag
@@ -168,32 +171,28 @@ def cross_corr(x_col, y_col, x_lab, y_lab):
             axs[plot[0], plot[1]].plot(X, Y, '.')
             axs[plot[0], plot[1]].plot(x_plt, y_plt, 'r-')
             (axs[plot[0], plot[1]]
-             .set_title(f'Lag={lag*24} hours, corr={corr:.2f},\np-value={t_test.pvalue}',
+             .set_title(f'Lag={lag*24} hours, corr={corr:.2f},\np-value={t_test.pvalue:.2e}',
                         fontsize='x-large',
                         color='red' if significant else 'black'))
+            axs[plot[0], plot[1]].set_yticks([])
         #############Increase lag for next loop
         lag += 1
     #############Set x and y labels and save plot
-    for ax in axs.flat:
-        ax.set(xlabel=x_lab, ylabel=y_lab)
-    # Hide x labels and tick labels for top plots and y ticks for right plots.
-    for ax in axs.flat:
-        ax.label_outer()
     #Add title, edit fig size and save.
+    fig.add_subplot(111, frameon=False)
+    plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+    plt.grid(False)
+    plt.xlabel(x_lab, fontdict={'fontsize':'x-large'})
+    plt.ylabel(y_lab, fontdict={'fontsize':'x-large'})
     fig.suptitle(f'{x_lab} against {y_lab} at different time lags',
                  fontsize='xx-large', fontweight='bold')
     fig.set_figheight(15)
     fig.set_figwidth(20)
-    plt.savefig(fr'.\Plots\{x_lab} against {y_lab}.png')
+    plt.savefig(fr'.\Plots\{x_lab} against {y_lab}.svg', bbox_inches='tight', dpi=300)
     plt.close()
-    #############Create plot of just lags and correlations
-    plt.plot(lags, corrs)
-    plt.plot(lags, sigs)
-    plt.xlabel('Lag (Hrs)')
-    plt.ylabel('Correlation')
-    plt.title(f'Correlation of {x_lab} against {y_lab} against time lags')
-    plt.savefig(fr'.\Plots\Corr of {x_lab} against {y_lab}.png')
-    plt.close()
+    #############Add significance and correlation to output table
+    df_out[y_lab] = [('+' if corr > 0 else '-' ) if abs(corr) > sig else ''
+                     for corr, sig in zip(corrs, sigs)]
 
 #############Run the cross correlation query on the required relationships
 cross_corr('MedicineDischarges', 'EDDischarges', 
@@ -213,13 +212,57 @@ cross_corr('MedicineDischarges', ['MeanTimeInDept', 'MeanLoSMins'],
 cross_corr('MedicineDischarges', ['EDDischarges', 'MRUAdmissions'],
            'Medicine Discharges', 'ED & MRU Discharges or Admissions')
 
-#Plot weekly trends for each piece of data
+#############Export summary table to excel
+#transpose the table
+df_out = df_out.transpose()
+# Create a Pandas Excel writer using XlsxWriter as the engine.
+writer = pd.ExcelWriter(r".\Plots\overall output.xlsx", engine="xlsxwriter")
+df_out.to_excel(writer, sheet_name="Sheet1")
+# Get the xlsxwriter workbook and worksheet objects.
+workbook = writer.book
+worksheet = writer.sheets["Sheet1"]
+# Get the dimensions of the dataframe.
+(max_row, max_col) = df_out.shape
+#set column widths
+right_align = workbook.add_format({'align':'right'})
+worksheet.set_column(0, 0, 31, right_align)
+centre_align = workbook.add_format({'align':'centre'})
+worksheet.set_column(1, max_col, 4, centre_align)
+# Add a format, one red and one green for conditional formatting.
+format1 = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+format2 = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+worksheet.conditional_format(1, 1, max_row, max_col,
+                             {"type": "cell", "criteria":"=", "value":'"-"',
+                              'format':format1})
+worksheet.conditional_format(1, 1, max_row, max_col,
+                             {"type": "cell", "criteria":"=", "value":'"+"',
+                              'format':format2})
+writer.close()
+
+
+#############Day of week plots
 df['DoW'] = pd.to_datetime(df['DischargeDate']).dt.day_of_week
-for col in ['MedicineDischarges', 'EDDischarges', 'BedDelayMins',
-            'FourHourPerf', 'MeanTimeInDept', 'MRUAdmissions', 'MeanLoSMins']:
+fig, axes = plt.subplots(2, 4, figsize=(25, 10), sharex=True)
+fig.delaxes(axes[1, 3])
+to_plot = [(axes[0,0], 'MedicineDischarges', 'Medicine Discharges'),
+           (axes[0,1], 'EDDischarges', 'ED Discharges'),
+           (axes[0,2], 'BedDelayMins', 'ED Bed Delays'),
+           (axes[0,3], 'FourHourPerf', 'ED 4 Hour Performance'),
+           (axes[1,0], 'MeanTimeInDept', 'ED Time in Department'),
+           (axes[1,1], 'MRUAdmissions', 'MRU Admissions'),
+           (axes[1,2], 'MeanLoSMins', 'MRU Length of Stay')]
+for ax, col, title in to_plot:
     group = df.groupby('DoW', as_index=False)[col].mean()
-    plt.bar(group['DoW'].values, group[col].values)
-    plt.xticks([0, 1, 2, 3, 4, 5, 6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-    plt.title(f'{col} against day of week')
-    plt.savefig(rf'.\Plots\{col} against day of week.png')
-    plt.close()
+    #Statistical significance test
+    pvalue = chisquare(f_obs=group[col], f_exp=[1/7 * group[col].sum()]*7)[1]
+    title = f'{title}\npvalue:{pvalue:.2e}'
+    #DoW bar chart
+    ax.bar(group['DoW'].values, group[col].values)
+    ax.set_yticks([])
+    ax.set_xticks([0, 1, 2, 3, 4, 5, 6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+    ax.tick_params(axis='y', which='major', labelsize=10)
+    ax.tick_params(axis='y', which='minor', labelsize=8)
+    ax.set_title(title, color = 'black' if pvalue >= 0.05 else 'red', fontsize='xx-large', fontweight='bold')
+fig.suptitle('Metrics against Day of the Week', fontsize='xx-large', fontweight='bold')    
+fig.savefig(r'.\Plots\metrics against day of week.png', bbox_inches='tight')
+plt.close()

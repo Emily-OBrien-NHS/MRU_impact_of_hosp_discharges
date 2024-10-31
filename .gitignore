@@ -13,5 +13,8 @@
 #any pyc
 *.pyc
 
+#any docx files
+*.docx
+
 #Plots folder
 Plots/
