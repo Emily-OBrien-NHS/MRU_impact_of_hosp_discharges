@@ -189,6 +189,7 @@ def cross_corr(x_col, y_col, x_lab, y_lab):
     fig.set_figheight(15)
     fig.set_figwidth(20)
     plt.savefig(fr'.\Plots\{x_lab} against {y_lab}.svg', bbox_inches='tight', dpi=300)
+    plt.savefig(fr'.\Plots\{x_lab} against {y_lab}.png', bbox_inches='tight', dpi=300)
     plt.close()
     #############Add significance and correlation to output table
     df_out[y_lab] = [('+' if corr > 0 else '-' ) if abs(corr) > sig else ''
@@ -211,6 +212,14 @@ cross_corr('MedicineDischarges', ['MeanTimeInDept', 'MeanLoSMins'],
            'Medicine Discharges', 'ED & MRU Time in Dep')
 cross_corr('MedicineDischarges', ['EDDischarges', 'MRUAdmissions'],
            'Medicine Discharges', 'ED & MRU Discharges or Admissions')
+cross_corr('MRUAdmissions', 'EDDischarges',
+           'MRU Admissions', 'ED Discharges')
+cross_corr('MeanLoSMins', 'MeanTimeInDept',
+           'MRU Time in Dep', 'ED Time in Dep')
+cross_corr('MRUAdmissions', 'FourHourPerf',
+           'MRU Admissions', 'ED 4hr Performance')
+cross_corr('MeanLoSMins', 'FourHourPerf',
+           'MRU Time in Dep', 'ED 4hr Performance')
 
 #############Export summary table to excel
 #transpose the table
